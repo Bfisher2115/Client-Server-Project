@@ -47,7 +47,7 @@ int main(int argc, char const *argv[]){
 	    if (n < 0){
 	    	puts("ERROR writing to socket");
 	    }
-	    return 0;
+	    close(inSockfd);
 	}
 	return 0;
 }
