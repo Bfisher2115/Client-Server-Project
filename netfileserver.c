@@ -8,9 +8,9 @@
 
 
 
-int main(int argc, char const *argv[])
-{
+int main(int argc, char const *argv[]){
 	int sockfd, inSockfd;
+	socklen_t clilen;
     char buffer[256];
     struct sockaddr_in serv_addr, cli_addr;
     int n;
@@ -28,24 +28,26 @@ int main(int argc, char const *argv[])
     serv_addr.sin_port = htons(portno);
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     /*Names the socket if bind succeeds with newly created socket struct*/
-    if(bind(sockfd,(struct sockaddr*)&serv_addr,sizeof(serv_addr))<0)
-    	error("Error on binding.");
+    if(bind(sockfd,(struct sockaddr*)&serv_addr,sizeof(serv_addr))<0){
+    	puts("Error on binding.");
+    }
     /*listen stores incoming calls to socket in a queue*/
-    listen(sockfd);
+    listen(sockfd,1);
     /*accept takes top item off of queue in listen and creates a new connected socket
     and returns a FD*/
-    while(inSockfd = accept(sockfd,(struct sockaddr*)&cli_addr,sizeof(cli_addr))){
-    	if (inSockfd < 0) 
-          error("ERROR on accept");
-     	bzero(buffer,256);
-     	n = read(newsockfd,buffer,255);
-     	if (n < 0) 
-     		error("ERROR reading from socket");
+    clilen = (socklen_t)sizeof(cli_addr);
+    while( (inSockfd = accept(sockfd,(struct sockaddr*) &cli_addr, &clilen)) >0){
+		bzero(buffer,256);
+     	n = read(inSockfd,buffer,255);
+     	if (n < 0){
+     		puts("ERROR reading from socket");
+     	} 
 	    printf("Here is the message: %s\n",buffer);
-	    n = write(newsockfd,"I got your message",18);
-	    if (n < 0) 
-	    	error("ERROR writing to socket");
-	    break;
-    }
+	    n = write(inSockfd,"I got your message",18);
+	    if (n < 0){
+	    	puts("ERROR writing to socket");
+	    }
+	    return 0;
+	}
 	return 0;
 }
