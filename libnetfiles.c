@@ -13,45 +13,70 @@ int netserverinit(char* hostname){
 	if(temp == NULL){
 		return -1;
 	}
+	/*TODO: set global variables with hostname, set flags*/
 	return 0;
 }
-
-int main(int argc, char const *argv[])
-{
-	/*REMOVE: testing with hard coded ip*/
+/*netopen: opens socket to the host, sends messege to 
+server, recieves a negative # as server FD, close socket
+and return the server FD(strictly negative)
+	PARAM 
+	@pathname: path to desired file in servers directory
+	@flags:  O_WRONLY = 0
+ 			 O_RDONLY  = 1
+ 			 O_RDWR = 2
+	RET: -1 if an error occurred, set ERRNO*/
+int netopen(const char* pathname,int flags){
+	struct hostent* server;
+	struct sockaddr_in serv_addr;
+	socklen_t n;
+	int ret,sockfd;
+	char buf[256];
+	bzero(buf,256);
+	/*TODO: implement a way to pass variable in*/
 	char*ip = "basic.cs.rutgers.edu";
-	/*Port no: hard coded to 63666*/
-	portno = 63666;
-
+	/*get socket*/
 	sockfd = socket(AF_INET,SOCK_STREAM,0);
-	if(sockfd < 0)
-		puts("Error opening socket.");
-	/*Zero out mem*/
-	memset(buffer,'0',sizeof(buffer));
-	memset(&serv_addr,'0',sizeof(serv_addr));
-	n = netserverinit(ip);
-	if(n == -1){
-		puts("Error retireving hostname");
+	if(sockfd < 0){
+		printf("Error opening socket.\n");
 		return -1;
 	}
+	/*open socket*/
 	server = gethostbyname(ip);
 	serv_addr.sin_family = AF_INET;
 	bcopy((char*)server->h_addr,(char*)&serv_addr.sin_addr.s_addr,server->h_length);
-	serv_addr.sin_port = htons(portno);
+	serv_addr.sin_port = htons(PORT);
 	n = (socklen_t)sizeof(serv_addr);
-	if (connect(sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0){ 
- 		puts("ERROR connecting");
+	if (connect(sockfd,(struct sockaddr *)&serv_addr,n) < 0){ 
+ 		printf("ERROR connecting\n");
+ 		return -1;
     }
-    printf("Please enter the message: ");
-    bzero(buffer,256);
-    fgets(buffer,255,stdin);
-    n = write(sockfd,buffer,strlen(buffer));
-    if (n < 0) 
-    	puts("ERROR writing to socket");
-    bzero(buffer,256);
-    n = read(sockfd,buffer,255);
-    if (n < 0) 
-    	puts("ERROR reading from socket");
-    printf("%s\n",buffer);
-	return 0;
+	switch(flags){
+		case 0:
+			/*server returns 0 upon fail*/
+			strncat(buf,"W ",2);
+			strncat(buf,pathname,strlen(pathname));
+			ret = write(sockfd,buf,strlen(buf));
+			if(ret == 0){
+				puts("Error when writing to socket");
+				close(sockfd);
+				return -1;
+			}
+			bzero(buf,256);
+			ret = read(sockfd,buf,256);
+			if(ret == 0){
+				puts("Error reading from socket");
+				close(sockfd);
+				return -1;
+			}
+			printf("%s\n",buf);
+			close(sockfd);
+			return ret;
+		case 1:
+			return -1;
+		case 2:
+			return -1;
+		default: 
+			return -1;
+	}
 }
+

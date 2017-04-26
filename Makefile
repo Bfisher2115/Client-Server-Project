@@ -1,10 +1,7 @@
-make: libnetfiles.c
-	gcc -g -Werror -Wall -fsanitize=address -o client libnetfiles.c
+make: netclient.c libnetfiles.c
+	gcc -Wall -c libnetfiles.c 
+	gcc -g -Werror -Wall -fsanitize=address netclient.c
 server: netfileserver.c
 	gcc -g -Werror -Wall -fsanitize=address -o server netfileserver.c	
-run_server:
-	./server
-run_client:
-	./client
 clean:
 	rm server rm client	

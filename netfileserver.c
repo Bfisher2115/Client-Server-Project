@@ -2,11 +2,13 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <pthread.h>
 #include <sys/types.h> 
 #include <sys/socket.h>
 #include <netinet/in.h>
 
-
+//the thread function
+void *connection_handler(void *);
 
 int main(int argc, char const *argv[]){
 	int sockfd, inSockfd;
@@ -36,17 +38,25 @@ int main(int argc, char const *argv[]){
     /*accept takes top item off of queue in listen and creates a new connected socket
     and returns a FD*/
     clilen = (socklen_t)sizeof(cli_addr);
+    pthread_t thread_id;
     while( (inSockfd = accept(sockfd,(struct sockaddr*) &cli_addr, &clilen)) >0){
-		bzero(buffer,256);
+		if( pthread_create( &thread_id , NULL ,  connection_handler , (void*) &client_sock) < 0){
+            perror("could not create thread");
+            return 1;
+        }
+
+/*		bzero(buffer,256);
      	n = read(inSockfd,buffer,255);
      	if (n < 0){
      		puts("ERROR reading from socket");
      	} 
 	    printf("Here is the message: %s\n",buffer);
-	    n = write(inSockfd,"I got your message",18);
+	    n = write(inSockfd,"recieved the message!",21);
 	    if (n < 0){
 	    	puts("ERROR writing to socket");
 	    }
+*/
+
 	    close(inSockfd);
 	}
 	return 0;
