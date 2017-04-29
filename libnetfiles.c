@@ -251,7 +251,7 @@ ssize_t netwrite(int fildes,const void*buf,size_t nbytes){
 		return -1;
 	}
 
-	return atoi(strtok(buff," ")); 
+	return atoi(strtok(NULL,"")); 
 }
 /*netclose: close a given serverFD
 	PARAM 

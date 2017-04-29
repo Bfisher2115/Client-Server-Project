@@ -114,7 +114,8 @@ char* sread(char* msg){
 		break;
 	}
 */
-	//read from FD
+	//read from FD, set FD to front of file
+	lseek(fd,0,SEEK_SET);
 	bzero(buf,256);
 	if(read(fd,buf,nbytes) == -1){
 		perror("Error");
@@ -152,7 +153,9 @@ int swrite(char* msg){
 		break;
 	}
 */
-	//read from FD, return the value
+	//read from FD, set FD to front of the file,
+	// return the value
+	lseek(fd,0,SEEK_SET);
 	return write(fd,token,nbytes);
 	
 }
@@ -184,7 +187,6 @@ void serv_fun(int sockfd){
 	buffer = (char*)calloc(256,1);
 	/*Read fromk socket*/
  	if (read(sockfd,buffer,256) < 0){
- 		puts("ERROR reading from socket");
  		perror("Error");
  		return;
  	}
@@ -200,7 +202,6 @@ void serv_fun(int sockfd){
  				bzero(buf2,256);
  				sprintf(buf2,"%d",errno);
 		    	if(write(sockfd,buf2,strlen(buf2)) < 0){
-		    		puts("ERROR writing to socket");
 		    		perror("Error");
 		   		}
 		   		break;
@@ -211,7 +212,6 @@ void serv_fun(int sockfd){
 			// CHECK
 		 	sprintf(buffer,"%d",-sFD);
 		    if (write(sockfd,buffer,strlen(buffer)) < 0){
-		    	puts("ERROR writing to socket");
 		    	perror("Error");
 		    }
 			break;
@@ -270,7 +270,6 @@ void serv_fun(int sockfd){
 			}
 			break;
  	}
-
  	close(sockfd);
  	free(buffer);
  	return;
