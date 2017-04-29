@@ -6,13 +6,17 @@
 #include <unistd.h>
 #include <netdb.h>
 #include <string.h>
+#include <errno.h>
+#include <fcntl.h>
 #include "libnetfiles.h"
+
 
 static struct hostent* init_IP = NULL;
 
 int netserverinit(char* hostname){
 	init_IP = gethostbyname(hostname);
 	if(init_IP == NULL){
+		perror("Error");
 		return -1;
 	}
 	return 0;
@@ -22,73 +26,78 @@ server, recieves a negative # as server FD, close socket
 and return the server FD(strictly negative)
 	PARAM 
 	@pathname: path to desired file in servers directory
-	@flags:  O_WRONLY = 0
- 			 O_RDONLY  = 1
+	@flags:  O_WRONLY = 1
+ 			 O_RDONLY  = 0
  			 O_RDWR = 2
 	RET:
 		neg int representing a serverFD 
 		(error)-1 if an error occurred, set ERRNO*/
 int netopen(const char* pathname,int flags){
 	if(init_IP == NULL){
-		puts("Need to initialize before calling netopen.");
-		/*TODO: set errno*/
+		perror("Error");
 		return -1;
 	}
 	struct sockaddr_in serv_addr;
 	socklen_t n;
 	int ret,sockfd;
-	char buf[256];
+	char buf[256]; 
+	char buf2[256];
 	bzero(buf,256);
-	/*TODO: implement a way to pass variable in*/
-	/*get socket*/
+	bzero(buf2,256);
+	/*open socket*/
 	sockfd = socket(AF_INET,SOCK_STREAM,0);
 	if(sockfd < 0){
-		printf("Error opening socket.\n");
+		perror("Error");
 		return -1;
 	}
-	/*open socket*/
+	/*set up port,connect to socket*/
 	serv_addr.sin_family = AF_INET;
 	bcopy((char*)init_IP->h_addr,(char*)&serv_addr.sin_addr.s_addr,init_IP->h_length);
 	serv_addr.sin_port = htons(PORT);
 	n = (socklen_t)sizeof(serv_addr);
-	if (connect(sockfd,(struct sockaddr *)&serv_addr,n) < 0){ 
- 		printf("ERROR connecting\n");
+	if (connect(sockfd,(struct sockaddr *)&serv_addr,n) < 0){
+		perror("Error");
  		return -1;
     }
-
 	/*server returns 0 upon fail*/
 	/*TODO: add mode to messege*/
 	strncat(buf,"o ",2);	
-	switch(flags){
-		case 0 :
-			strncat(buf,"w ",2);
-			break;
-		case 1 :
-			strncat(buf,"r ",2);
-			break;
-		case 2 :
-			strncat(buf,"r+ ",3);
-			break;
-		default : 
-			puts("Error no flag inputed");
-			return 0;
-	}
 	strncat(buf,pathname,strlen(pathname));
-	ret = write(sockfd,buf,strlen(buf));
-	if(ret == 0){
-				puts("Error when writing to socket");
-				close(sockfd);
-				return -1;
+	switch(flags){
+		case 0:
+			strncat(buf," 0",2);
+			break;
+		case 1:
+			strncat(buf," 1",2);
+			break;
+		case 2:
+			strncat(buf," 2",2);
+			break;
 	}
+	/*Write to socket*/
+	if(write(sockfd,buf,strlen(buf)) == -1){
+		perror("Error");
+		close(sockfd);
+		return -1;
+	}
+	/*Read messege from socket*/
 	bzero(buf,256);
-	ret = read(sockfd,buf,256);
-	if(ret == 0){
-		puts("Error reading from socket");
+	if(read(sockfd,buf,256) == -1){
+		perror("Error");
 		close(sockfd);
 		return -1;
 	}
 	close(sockfd);
-	return atoi(buf);
+	ret = atoi(buf);
+	// if neg then success, got FD
+	if(ret < 0){
+		return ret;
+	} 
+	//otherwise, errno value sent  
+	else{
+		// TODO: set errno
+		return -1;
+	}
 }
 /*netread: opens socket to the host, sends messege to 
 server, recieves a message with "(<nbytesread>(<buf>", nbytes 
@@ -115,7 +124,7 @@ ssize_t netread(int fildes,void*buf,size_t nbytes){
 	/*get socket*/
 	sockfd = socket(AF_INET,SOCK_STREAM,0);
 	if(sockfd < 0){
-		printf("Error opening socket.\n");
+		perror("Error");
 		return -1;
 	}
 	/*open socket*/
@@ -124,10 +133,10 @@ ssize_t netread(int fildes,void*buf,size_t nbytes){
 	serv_addr.sin_port = htons(PORT);
 	n = (socklen_t)sizeof(serv_addr);
 	if (connect(sockfd,(struct sockaddr *)&serv_addr,n) < 0){ 
- 		printf("ERROR connecting\n");
+ 		perror("Error");
  		return -1;
     }
-	/*server returns 0 upon fail*/
+	// Create the messege to send to sever
 	char tbuf[100];
 	strncat(buff,"r ",2);
 	sprintf(tbuf,"%d",fildes);
@@ -136,29 +145,39 @@ ssize_t netread(int fildes,void*buf,size_t nbytes){
 	sprintf(tbuf," %zd",nbytes);
 	strncat(buff,tbuf,sizeof(tbuf));
 	bzero(tbuf,100);
-	ret = write(sockfd,buff,strlen(buff));
-	if(ret == 0){
-		puts("Error when writing to socket");
+	// send messege to server
+	if(write(sockfd,buff,strlen(buff)) == -1){
+		perror("Error");
 		close(sockfd);
 		return -1;
 	}
+	// read messege sent back from server
 	bzero(buff,256);
-	ret = read(sockfd,buff,256);
-	if(ret == 0){
-		puts("Error reading from socket");
+	if(read(sockfd,buff,256) == -1){
+		perror("Error");
 		close(sockfd);
 		return -1;
 	}
-	//decode message ex."(100(abdcsjdnjndkf...
+	//decode message ex."S(100(abdcsjdnjndkf...
 	token = strtok(buff,"(");
-	ret = atoi(token);
-	if(ret == 0){
-		return ret;
+	// Read-Fail set val returned is Errno val
+	if(buff[0] == 'F'){
+		token = strtok(NULL,"(");
+		ret = atoi(token);
+		buf = NULL;
+		close(sockfd);
+		return -1;
 	}
-	token = strtok(NULL,"(");
-	memcpy(buf,token,strlen(token));
-	close(sockfd);
-	return ret;
+	// Success return number of bytes read, set buf
+	else{
+		token = strtok(NULL,"(");
+		ret = atoi(token);
+		token = strtok(NULL,"");
+		memcpy(buf,token,strlen(token));
+		close(sockfd);
+		return ret;
+
+	}
 }
 /*netwrite: opens socket to the host, sends messege to 
 server, recieves a message with "(<nbyteswritten>(<buf>", nbytes 
@@ -176,17 +195,18 @@ ssize_t netwrite(int fildes,const void*buf,size_t nbytes){
 		/*TODO: set errno*/
 		return -1;
 	}
+
 	struct sockaddr_in serv_addr;
 	socklen_t n;
 	int ret,sockfd;
-	char* token;
 	char buff[256];
+	char*token;
 	bzero(buff,256);
 	/*TODO: implement a way to pass variable in*/
 	/*get socket*/
 	sockfd = socket(AF_INET,SOCK_STREAM,0);
 	if(sockfd < 0){
-		printf("Error opening socket.\n");
+		perror("Error");
 		return -1;
 	}
 	/*open socket*/
@@ -195,11 +215,12 @@ ssize_t netwrite(int fildes,const void*buf,size_t nbytes){
 	serv_addr.sin_port = htons(PORT);
 	n = (socklen_t)sizeof(serv_addr);
 	if (connect(sockfd,(struct sockaddr *)&serv_addr,n) < 0){ 
- 		printf("ERROR connecting\n");
+ 		perror("Error");
  		return -1;
     }
-	/*server returns 0 upon fail*/
+	// send messege to the server
 	char tbuf[100];
+	bzero(tbuf,100);
 	strncat(buff,"w ",2);
 	sprintf(tbuf,"%d",fildes);
 	strncat(buff,tbuf,sizeof(tbuf));
@@ -208,23 +229,29 @@ ssize_t netwrite(int fildes,const void*buf,size_t nbytes){
 	strncat(buff,tbuf,sizeof(tbuf));
 	strncat(buff,buf,strlen(buf));
 	bzero(tbuf,100);
-	ret = write(sockfd,buff,strlen(buff));
-	if(ret == 0){
-		puts("Error when writing to socket");
+	// write to the server
+	if(write(sockfd,buff,strlen(buff)) == -1){
+		perror("Error");
 		close(sockfd);
 		return -1;
 	}
+	// read messege back from the server
 	bzero(buff,256);
-	ret = read(sockfd,buff,256);
-	if(ret == 0){
-		puts("Error reading from socket");
+	if(read(sockfd,buff,256) == -1){
+		perror("Error");
 		close(sockfd);
 		return -1;
 	}
-	//decode message
-	ret = atoi(buff);
 	close(sockfd);
-	return ret;
+	//decode message
+	token = strtok(buff," ");
+	if(token[0] == 'F'){
+		errno = atoi(strtok(buff," "));
+		perror("Error");
+		return -1;
+	}
+
+	return atoi(strtok(buff," ")); 
 }
 /*netclose: close a given serverFD
 	PARAM 
@@ -244,13 +271,13 @@ int netclose(int fd){
 	char buff[100];
 	char temp[100];
 	bzero(buff,100);
-	/*get socket*/
+	// open socket stream
 	sockfd = socket(AF_INET,SOCK_STREAM,0);
 	if(sockfd < 0){
 		printf("Error opening socket.\n");
 		return -1;
 	}
-	/*open socket*/
+	// create port , connect socket and port
 	serv_addr.sin_family = AF_INET;
 	bcopy((char*)init_IP->h_addr,(char*)&serv_addr.sin_addr.s_addr,init_IP->h_length);
 	serv_addr.sin_port = htons(PORT);
@@ -259,26 +286,31 @@ int netclose(int fd){
  		printf("ERROR connecting\n");
  		return -1;
     }
-	/*server returns 0 upon fail*/
 	// make a mesege to send
     strncat(buff,"c ",2);
     sprintf(temp,"%d",fd);
     strncat(buff,temp,strlen(temp));
-	ret = write(sockfd,buff,strlen(buff));
-	if(ret == 0){
+    // send messege to the server
+	if(write(sockfd,buff,strlen(buff)) == -1){
 		puts("Error when writing to socket");
 		close(sockfd);
 		return -1;
 	}
+	// recieve messege from the server
 	bzero(buff,100);
-	ret = read(sockfd,buff,100);
-	if(ret == 0){
-		puts("Error when writing to socket");
+	if(read(sockfd,buff,100) == -1){
+		perror("Error");
 		close(sockfd);
 		return -1;
 	}
+	close(sockfd);
 	//decode message
 	ret = atoi(buff);
-	close(sockfd);
-	return ret;
+	// set errno to one passed in
+	if(ret != 0){
+		errno = ret;
+		perror("Error");
+		return -1;
+	}
+	return 0;
 }
