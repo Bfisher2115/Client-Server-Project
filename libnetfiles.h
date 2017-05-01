@@ -7,7 +7,7 @@
 #include <netdb.h>
 #include <fcntl.h>
 
-int netserverinit(char* hostname);
+int netserverinit(char* hostname,int filemode);
 int netopen(const char* pathname,int flags);
 ssize_t netread(int fildes,void*buf,size_t nbtyes);
 ssize_t netwrite(int fildes,const void*buf,size_t nbytes);
@@ -17,8 +17,10 @@ int netclose(int fd);
 
 #ifndef CLIENT_H
 #define CLIENT_H
-
-
+// define macro for filemode
+#define UNRESTRICTED 0
+#define EXCLUSIVE 1
+#define TRANSACTION 2
 
 
 #endif

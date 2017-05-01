@@ -12,13 +12,15 @@
 
 
 static struct hostent* init_IP = NULL;
+static int fileMode = 0;
 
-int netserverinit(char* hostname){
+int netserverinit(char* hostname, int filemode){
 	init_IP = gethostbyname(hostname);
 	if(init_IP == NULL){
 		perror("Error");
 		return -1;
 	}
+	fileMode = filemode;
 	return 0;
 }
 /*netopen: opens socket to the host, sends messege to 
@@ -34,6 +36,7 @@ and return the server FD(strictly negative)
 		(error)-1 if an error occurred, set ERRNO*/
 int netopen(const char* pathname,int flags){
 	if(init_IP == NULL){
+		errno = HOST_NOT_FOUND;
 		perror("Error");
 		return -1;
 	}
@@ -73,7 +76,12 @@ int netopen(const char* pathname,int flags){
 		case 2:
 			strncat(buf," 2",2);
 			break;
+		default:
+			return -1;
 	}
+	// set file mode
+	sprintf(buf2," %d",fileMode);
+	strncat(buf,buf2,strlen(buf2));
 	/*Write to socket*/
 	if(write(sockfd,buf,strlen(buf)) == -1){
 		perror("Error");
@@ -111,8 +119,8 @@ has (( around it to use as delims
 		(error)-1 if an error occurred, set ERRNO*/
 ssize_t netread(int fildes,void*buf,size_t nbytes){
 	if(init_IP == NULL){
-		puts("Need to initialize before calling netread.");
-		/*TODO: set errno*/
+		errno = HOST_NOT_FOUND;
+		perror("Error");
 		return -1;
 	}
 	struct sockaddr_in serv_addr;

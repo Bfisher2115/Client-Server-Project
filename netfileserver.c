@@ -9,8 +9,11 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <stdbool.h>
 
 #define PORT 63667
+// size of hash table
+#define SIZE 101
 
 
 //the thread function
@@ -19,10 +22,32 @@ int sopen(char* msg);
 char* sread(char* msg);
 int swrite(char* msg);
 int sclose(char* msg);
+int hash(int key);
+// child node
+typedef struct ChildNode{
+	int fd;
+	// RD,WR,RDWR
+	int flag;
+	// UN,EX,TRAN
+	int mode;
+	// share key 
+	struct ChildNode* next;
+} node;
+// bucket node for hash table
+typedef struct bucketNode{
+	int key;
+	// collisions, same index diff key
+	struct bucketNode* col;
+	// share key 
+	node* next;
+} bucket;
+// hash table
+static bucket** h_table;
 
 int sockfd, inSockfd;
 socklen_t clilen;
 struct sockaddr_in serv_addr, cli_addr;
+
 
 int main(int argc, char const *argv[]){
     sockfd = socket(AF_INET,SOCK_STREAM,0);
@@ -52,14 +77,18 @@ int main(int argc, char const *argv[]){
     /*accept takes top item off of queue in listen and creates a new connected socket
     and returns a FD*/
     clilen = (socklen_t)sizeof(cli_addr);
+    // initialize your struct
+    h_table = (bucket**)calloc(sizeof(bucket*),SIZE);
     //pthread_t thread_id;
     while( (inSockfd = accept(sockfd,(struct sockaddr*) &cli_addr, &clilen)) >0){
+    	// TODO: threading
+    	
     	serv_fun(inSockfd);
 	
-	/*if( pthread_create( &thread_id , NULL ,  connection_handler , (void*) &client_sock) < 0){
-            perror("could not create thread");
-            return 1;
-    }*/
+	// if( pthread_create( &thread_id , NULL ,  connection_handler , (void*)&client_sock) < 0){
+ //            perror("could not create thread");
+ //            return 1;
+ //    }
 	}
 	return 0;
 }
@@ -67,24 +96,116 @@ int sopen(char* msg){
 	char buf2[256];
 	char*token;
 	bzero(buf2,256);
-	int k = 0;
-	/*get pathname == buf2
+	int flag ,mode, index, fd;
+		/*get pathname == buf2
 		  flag	   == k*/
 	token = strtok(msg," ");
 	token = strtok(NULL," ");
  	strncat(buf2,token,strlen(token));
  	token = strtok(NULL," ");
- 	k = atoi(token);
- 	/*call open depending on flag*/
- 	if(k == 0){
- 		k = open(buf2,O_RDONLY);
- 	}else if(k == 1){
- 		k = open(buf2,O_WRONLY);
- 	}else{
- 		k = open(buf2,O_RDWR);
+ 	flag = atoi(token);
+ 	token = strtok(NULL," ");
+ 	mode = atoi(token);
+
+ 	fd = open(buf2,flag);
+ 	if(fd == -1){
+ 		perror("Error");
+ 		return -1;
  	}
- 	/*check k and errno*/
- 	return k;
+ 	// get the key values
+ 	struct stat stats;
+	fstat(fd,&stats);
+	bzero(buf2,256);
+	sprintf(buf2,"%ld%ld",stats.st_dev,stats.st_ino);
+	int key = atoi(buf2);
+	// get index using hash function
+ 	index = key % SIZE;
+ 	// ptr to index
+ 	bucket* bptr = h_table[index];
+ 	bucket*temp;
+ 	node* ptr;
+ 	// lock threads here;
+ 	// iterate across colissions in bucket
+ 	while(bptr != NULL){
+ 		// found matching key
+ 		if(bptr->key == key){
+ 			ptr = bptr->next;
+ 			// if in Tran then we cannot insert, if bptr != NULL we cant insert a TRAN mode FD
+ 			if(ptr->mode == 2  || mode == 2){
+ 				// TODO: return the aproriate errno value
+ 				return -1;
+ 			} 
+ 			if(flag == O_RDONLY){
+ 				// insert new node 
+				// init node
+				ptr = (node*)calloc(sizeof(node),1);
+				ptr->fd = fd;
+				ptr->mode = mode;
+				ptr->flag = flag;
+				ptr->next = bptr->next;
+				bptr->next = ptr;
+ 				return fd;
+ 			}
+ 			switch(mode){
+ 				// UNREStricted
+ 				case 0:
+ 					while(ptr != NULL){
+ 						// exclusive write
+ 						if(ptr->mode == 1 && ptr->flag != O_RDONLY){
+ 							// cannot insert write, EXC write exists
+ 							// TODO: return the right errno
+ 							return -1;
+ 						}
+ 						ptr = ptr->next;
+ 					}
+ 					// add to front of the list
+ 					ptr = (node*)calloc(sizeof(node),1);
+					ptr->fd = fd;
+					ptr->mode = mode;
+					ptr->flag = flag;
+					ptr->next = bptr->next;
+					bptr->next = ptr;
+	 				return fd;
+ 				// EXclusive
+ 				case 1:
+ 					// EX write
+ 					while(ptr != NULL){
+ 						// if FD open in Write exists
+ 						if(ptr->flag != O_RDONLY){
+ 							// cannot insert a EXC write, another Fd is already open in Write mode
+ 							// TODO: return the right errno
+ 							return -1;
+ 						}
+ 						ptr = ptr->next;
+ 					}
+ 					// add to front of the list
+ 					ptr = (node*)calloc(sizeof(node),1);
+					ptr->fd = fd;
+					ptr->mode = mode;
+					ptr->flag = flag;
+					ptr->next = bptr->next;
+					bptr->next = ptr;
+	 				return fd;
+ 			}
+ 		}
+ 		// move to next collision
+ 		bptr = bptr->col;
+ 	}
+ 	// else make a new bucket node at bprt catches case where bucket unitiliazied
+ 	// init bucket
+ 	temp = (bucket*)calloc(sizeof(bucket),1);
+ 	temp->key = key;
+ 	temp->col = bptr;
+ 	// init node
+	ptr = (node*)calloc(sizeof(node),1);
+	ptr->fd = fd;
+	ptr->mode = mode;
+	ptr->flag = flag;
+	// ptr arith
+	temp->next = ptr;
+	temp->col = bptr;
+	h_table[index] = temp;
+	return fd;
 }
 
 char* sread(char* msg){
@@ -184,6 +305,7 @@ void serv_fun(int sockfd){
 	char* buffer;
 	char buf2[256];
 	int k = 0;
+	struct stat stat1;
 	buffer = (char*)calloc(256,1);
 	/*Read fromk socket*/
  	if (read(sockfd,buffer,256) < 0){
@@ -206,6 +328,8 @@ void serv_fun(int sockfd){
 		   		}
 		   		break;
 			}
+			fstat(sFD,&stat1);
+			printf("st_dev: %zd   st_ino: %zd\n",stat1.st_dev,stat1.st_ino);
 			// return the sFD
 			// TODO: deal with making sFD negative
 			bzero(buf2,256);
