@@ -133,6 +133,7 @@ int sopen(char* msg){
  			// if in Tran then we cannot insert, if bptr != NULL we cant insert a TRAN mode FD
  			if(ptr->mode == 2  || mode == 2){
  				// TODO: return the aproriate errno value
+ 				close(fd);
  				return -1;
  			} 
  			if(flag == O_RDONLY){
@@ -154,6 +155,7 @@ int sopen(char* msg){
  						if(ptr->mode == 1 && ptr->flag != O_RDONLY){
  							// cannot insert write, EXC write exists
  							// TODO: return the right errno
+ 							close(fd);
  							return -1;
  						}
  						ptr = ptr->next;
@@ -174,6 +176,7 @@ int sopen(char* msg){
  						if(ptr->flag != O_RDONLY){
  							// cannot insert a EXC write, another Fd is already open in Write mode
  							// TODO: return the right errno
+ 							close(fd);
  							return -1;
  						}
  						ptr = ptr->next;
@@ -288,6 +291,18 @@ int sclose(char* msg){
 	token = strtok(msg," ");
 	token = strtok(NULL," ");
 	fd = -(atoi(token));
+	// get the key values
+ 	struct stat stats;
+	fstat(fd,&stats);
+	bzero(buf2,256);
+	sprintf(buf2,"%ld%ld",stats.st_dev,stats.st_ino);
+	int key = atoi(buf2);
+	// get index using hash function
+ 	index = key % SIZE;
+ 	// ptr to index
+ 	bucket* bptr = h_table[index];
+ 	bucket*temp;
+ 	node* ptr;
 	//close the fd
 	if(close(fd) == -1){
 		perror("Error");
