@@ -35,7 +35,8 @@ typedef struct ChildNode{
 } node;
 // bucket node for hash table
 typedef struct bucketNode{
-	int key;
+	long key;
+	int size;
 	// collisions, same index diff key
 	struct bucketNode* col;
 	// share key 
@@ -117,7 +118,7 @@ int sopen(char* msg){
 	fstat(fd,&stats);
 	bzero(buf2,256);
 	sprintf(buf2,"%ld%ld",stats.st_dev,stats.st_ino);
-	int key = atoi(buf2);
+	long key = strtol(buf2,&token,10);
 	// get index using hash function
  	index = key % SIZE;
  	// ptr to index
@@ -145,6 +146,7 @@ int sopen(char* msg){
 				ptr->flag = flag;
 				ptr->next = bptr->next;
 				bptr->next = ptr;
+				bptr->size++;
  				return fd;
  			}
  			switch(mode){
@@ -167,6 +169,7 @@ int sopen(char* msg){
 					ptr->flag = flag;
 					ptr->next = bptr->next;
 					bptr->next = ptr;
+					bptr->size++;
 	 				return fd;
  				// EXclusive
  				case 1:
@@ -188,6 +191,7 @@ int sopen(char* msg){
 					ptr->flag = flag;
 					ptr->next = bptr->next;
 					bptr->next = ptr;
+					bptr->size++;
 	 				return fd;
  			}
  		}
@@ -199,6 +203,7 @@ int sopen(char* msg){
  	temp = (bucket*)calloc(sizeof(bucket),1);
  	temp->key = key;
  	temp->col = bptr;
+ 	temp->size++;
  	// init node
 	ptr = (node*)calloc(sizeof(node),1);
 	ptr->fd = fd;
@@ -225,19 +230,6 @@ char* sread(char* msg){
 	nbytes = atoi(token);
 	//check global state of fd
 	//does it have Read/write access?
-
-/*			k = fcntl(fd,F_GETFL);
-	printf("%d\n",k);
-	if(k == 32768){
-		puts(strerror(errno));
-		puts("file was opened in Write mode-cannot Read");
-		k = write(sockfd,"(0(",2);
-    	if (k < 0){
-    		puts("ERROR writing to socket");
-    	}
-		break;
-	}
-*/
 	//read from FD, set FD to front of file
 	lseek(fd,0,SEEK_SET);
 	bzero(buf,256);
@@ -264,19 +256,6 @@ int swrite(char* msg){
 	token = strtok(NULL,"");
 	//check global state of fd
 	//does it have Read/write access?
-
-/*			k = fcntl(fd,F_GETFL);
-	printf("%d\n",k);
-	if(k == 00){
-		puts(strerror(errno));
-		puts("file was opened in Read mode-cannot Write");
-		k = write(sockfd,"0",2);
-    	if (k < 0){
-    		puts("ERROR writing to socket");
-    	}
-		break;
-	}
-*/
 	//read from FD, set FD to front of the file,
 	// return the value
 	lseek(fd,0,SEEK_SET);
@@ -285,9 +264,11 @@ int swrite(char* msg){
 }
 
 int sclose(char* msg){
-	// decode messege
 	char*token;
 	int fd;
+	char buf2[256];
+	int index;
+	// decode messege
 	token = strtok(msg," ");
 	token = strtok(NULL," ");
 	fd = -(atoi(token));
@@ -296,23 +277,60 @@ int sclose(char* msg){
 	fstat(fd,&stats);
 	bzero(buf2,256);
 	sprintf(buf2,"%ld%ld",stats.st_dev,stats.st_ino);
-	int key = atoi(buf2);
+	long key = strtol(buf2,&token,10);
 	// get index using hash function
  	index = key % SIZE;
  	// ptr to index
  	bucket* bptr = h_table[index];
- 	bucket*temp;
- 	node* ptr;
-	//close the fd
-	if(close(fd) == -1){
-		perror("Error");
-		return -1;
-	}
-	return 0;
+ 	node* ptr = NULL;
+ 	node* prev = NULL;
+
+ 	while(bptr != NULL){
+ 		if(bptr->key == key){
+ 			ptr = bptr->next;
+ 			// case if there is one fd in list
+ 			if(bptr->size == 1){
+ 				if(ptr->fd == fd){
+ 					// found file
+ 					if(close(fd) == -1) perror("Error");
+ 					// delete bptr+node
+ 					free(ptr);
+ 					h_table[index] = bptr->col;
+ 					free(bptr);
+ 					return 0;
+ 				}
+ 			}
+ 			// other wise check nodes
+ 			while(ptr != NULL){
+ 				if(ptr->fd == fd){
+ 					// del first node in LL
+ 					if(prev == NULL){
+ 						bptr->next = ptr->next;
+		 				free(ptr);
+		 				bptr->size--;
+		 				if(close(fd) == -1) perror("Error");
+		 				return 0;
+		 			}
+		 			// del from list anywhere else
+		 			else{
+		 				prev->next = ptr->next;
+		 				bptr->size--;
+		 				free(ptr);
+		 				if(close(fd) == -1) perror("Error");
+		 				return 0;
+		 			}
+ 				}
+ 				prev = ptr;
+ 				ptr = ptr->next;
+ 			}
+ 		}
+ 		bptr = bptr->col;
+ 	}
+ 	// failed to find it
+ 	// TODO: set errno value
+ 	errno = EBADF;
+	return -1;
 }
-
-
-
 
 void serv_fun(int sockfd){
 	char*ret;

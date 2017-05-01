@@ -12,29 +12,29 @@ int main(int argc, char const *argv[])
 	/*REMOVE: testing with hard coded ip*/
 	char*ip = "basic.cs.rutgers.edu";
     //const char*test_w = "hello there";
-    int n;
+    int n1,n2,n3,x;
     //int x;
     // schar buf[256];
 
-	netserverinit(ip,TRANSACTION);
-	n = netopen("/.autofs/ilab/ilab_users/bgf23/Client-Server-Project/testfile.txt",O_WRONLY);
-    printf("FD returned == %d\n",n);
-    n = netopen("/.autofs/ilab/ilab_users/bgf23/Client-Server-Project/testfile.txt",O_RDONLY);
-    printf("FD returned == %d\n",n);
+	netserverinit(ip,UNRESTRICTED);
+	n1 = netopen("/.autofs/ilab/ilab_users/bgf23/Client-Server-Project/testfile.txt",O_WRONLY);
+    printf("FD returned == %d\n",n1);
+    n2 = netopen("/.autofs/ilab/ilab_users/bgf23/Client-Server-Project/testfile.txt",O_RDONLY);
+    printf("FD returned == %d\n",n2);
     
-    netserverinit(ip,UNRESTRICTED);
-    n = netopen("/.autofs/ilab/ilab_users/bgf23/Client-Server-Project/testfile.txt",O_WRONLY);
-    printf("FD returned == %d\n",n);
-    n = netopen("/.autofs/ilab/ilab_users/bgf23/Client-Server-Project/testfile.txt",O_RDONLY);
-    printf("FD returned == %d\n",n);
-    n = netopen("/.autofs/ilab/ilab_users/bgf23/Client-Server-Project/testfile.txt",O_RDWR);
-    printf("FD returned == %d\n",n);
+     netserverinit(ip,EXCLUSIVE);
+    n3 = netopen("/.autofs/ilab/ilab_users/bgf23/Client-Server-Project/testfile.txt",O_WRONLY);
+    printf("FD returned == %d\n",n3);
+    // n = netopen("/.autofs/ilab/ilab_users/bgf23/Client-Server-Project/testfile.txt",O_RDONLY);
+    // printf("FD returned == %d\n",n);
+    // n = netopen("/.autofs/ilab/ilab_users/bgf23/Client-Server-Project/testfile.txt",O_RDWR);
+    // printf("FD returned == %d\n",n);
 
-    netserverinit(ip,TRANSACTION);
-    n = netopen("/.autofs/ilab/ilab_users/bgf23/Client-Server-Project/testfile.txt",O_RDONLY);
-    printf("FD returned == %d\n",n);
-    n = netopen("/.autofs/ilab/ilab_users/bgf23/Client-Server-Project/testfile.txt",O_WRONLY);
-    printf("FD returned == %d\n",n);
+    // netserverinit(ip,TRANSACTION);
+    // n = netopen("/.autofs/ilab/ilab_users/bgf23/Client-Server-Project/testfile.txt",O_RDONLY);
+    // printf("FD returned == %d\n",n);
+    // n = netopen("/.autofs/ilab/ilab_users/bgf23/Client-Server-Project/testfile.txt",O_WRONLY);
+    // printf("FD returned == %d\n",n);
 
     // x = netread(n,buf,42);
     // printf("read this many bytes: %d\n",x);
@@ -55,8 +55,8 @@ int main(int argc, char const *argv[])
 
 
 
-    // x = netclose(n);
-    // printf("return on close = %d\n",x);
+     x = netclose(n1);
+     printf("return on close = %d\n",x);
 
 	return 0;
 }
