@@ -206,7 +206,7 @@ ssize_t netwrite(int fildes,const void*buf,size_t nbytes){
 
 	struct sockaddr_in serv_addr;
 	socklen_t n;
-	int ret,sockfd;
+	int sockfd;
 	char buff[256];
 	char*token;
 	bzero(buff,256);
@@ -275,7 +275,7 @@ int netclose(int fd){
 	}
 	struct sockaddr_in serv_addr;
 	socklen_t n;
-	int ret,sockfd;
+	int sockfd,ret;
 	char buff[100];
 	char temp[100];
 	bzero(buff,100);

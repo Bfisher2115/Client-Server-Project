@@ -14,10 +14,11 @@
 #define PORT 63667
 // size of hash table
 #define SIZE 101
+#define THREADS 10
 
 
 //the thread function
-void serv_fun(int sockfd);
+void serv_fun(void* insockfd);
 int sopen(char* msg);
 char* sread(char* msg);
 int swrite(char* msg);
@@ -44,54 +45,174 @@ typedef struct bucketNode{
 } bucket;
 // hash table
 static bucket** h_table;
-
-int sockfd, inSockfd;
-socklen_t clilen;
-struct sockaddr_in serv_addr, cli_addr;
-
+// mutex lock
+pthread_mutex_t lock;
+// running count on # of active threads
+int active_threads;
 
 int main(int argc, char const *argv[]){
+	int sockfd;
+	int * inSockfd;
+	socklen_t clilen;
+	struct sockaddr_in serv_addr, cli_addr;
+	// initialize your struct
+    h_table = (bucket**)calloc(sizeof(bucket*),SIZE);
+	// open TCP stream
     sockfd = socket(AF_INET,SOCK_STREAM,0);
     if(sockfd < 0){
     	perror("Error");
     	return 0;
     }
+    // set socket opts
     int n = 1;
 	if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &n, sizeof(int)) < 0){
     	puts("setsockopt(SO_REUSEADDR) failed");
     	perror("Error");
     	return 0;
     }
-    /*set the feilds of the Sockaddr_in struct*/
+    // set feilds of sockaddr_in
     bzero((char*)&serv_addr,sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
-    /*Htons: special function for converting to */
     serv_addr.sin_port = htons(PORT);
     serv_addr.sin_addr.s_addr = INADDR_ANY;
-    /*Names the socket if bind succeeds with newly created socket struct*/
+    // bind socket with port
     if(bind(sockfd,(struct sockaddr*)&serv_addr,sizeof(serv_addr))<0){
     	perror("Error");
     	return 0;
     }
-    /*listen stores incoming calls to socket in a queue*/
+    // queue up connections to the socket
     listen(sockfd,10);
-    /*accept takes top item off of queue in listen and creates a new connected socket
-    and returns a FD*/
     clilen = (socklen_t)sizeof(cli_addr);
-    // initialize your struct
-    h_table = (bucket**)calloc(sizeof(bucket*),SIZE);
-    //pthread_t thread_id;
-    while( (inSockfd = accept(sockfd,(struct sockaddr*) &cli_addr, &clilen)) >0){
-    	// TODO: threading
-    	
-    	serv_fun(inSockfd);
-	
-	// if( pthread_create( &thread_id , NULL ,  connection_handler , (void*)&client_sock) < 0){
- //            perror("could not create thread");
- //            return 1;
- //    }
-	}
+    pthread_t worker_thread_id;
+    // calloc for thread perameter
+    inSockfd = malloc(sizeof(*inSockfd));
+    while( (*inSockfd = accept(sockfd,(struct sockaddr*) &cli_addr, &clilen)) >0){
+
+    	/*TESTING: use this to test struct functionality*/
+    	// serv_fun(inSockfd);
+		
+		if( pthread_create( &worker_thread_id ,NULL,(void*)serv_fun,inSockfd ) < 0){
+            perror("could not create thread");
+            return 1;
+    	}
+    	// increase thread count, wait until # < 10
+    	active_threads++;
+    	inSockfd = malloc(sizeof(*inSockfd));
+    	while(active_threads == 10);
+	}	
 	return 0;
+}
+void serv_fun(void* insockfd){
+	int sockfd = (*(int*)insockfd);
+	char*ret;
+	int sFD;
+	char* buffer;
+	char buf2[256];
+	int k = 0;
+	struct stat stat1;
+	buffer = (char*)calloc(256,1);
+	/*Read fromk socket*/
+ 	if (read(sockfd,buffer,256) < 0){
+ 		perror("Error");	
+ 		free(buffer);
+ 		free(insockfd);
+ 		close(sockfd);
+ 		active_threads--;
+ 		return;
+ 	}
+ 	printf("%s\n",buffer);
+ 	switch(buffer[0]){
+ 		/*sopen()*/
+ 		case 'o' :
+ 			/*call sopen() with rest of buffer*/
+ 			sFD = sopen(buffer);
+ 			// unlock after return
+ 			pthread_mutex_unlock(&lock);
+ 			/*Check return val*/
+ 			if( sFD == -1){
+ 				/*Write back the errno value*/
+ 				bzero(buf2,256);
+ 				sprintf(buf2,"%d",errno);
+		    	if(write(sockfd,buf2,strlen(buf2)) < 0){
+		    		perror("Error");
+		   		}
+		   		break;
+			}
+			fstat(sFD,&stat1);
+			printf("st_dev: %zd   st_ino: %zd\n",stat1.st_dev,stat1.st_ino);
+			// return the sFD
+			// TODO: deal with making sFD negative
+			bzero(buf2,256);
+			// CHECK
+		 	sprintf(buffer,"%d",-sFD);
+		    if (write(sockfd,buffer,strlen(buffer)) < 0){
+		    	perror("Error");
+		    }
+			break;
+		/*sread()*/
+		case 'r' :
+			//call swrite and check return value
+ 			if( (ret = (sread(buffer))) == NULL){
+ 				/*Write back the errno value*/
+ 				bzero(buf2,256);
+ 				sprintf(buf2,"F(%d(",errno);
+		    	if(write(sockfd,buf2,strlen(buf2)) < 0){
+		    		perror("Error");
+		   		}
+		   		break;
+			}
+			// create messege "<S/F>(<nbytes>(<ret>"
+			bzero(buf2,256);
+			sprintf(buf2,"S(%zd(",strlen(ret));
+			strncat(buf2,ret,strlen(ret));
+			free(ret);
+			if (write(sockfd,buf2,strlen(buf2))== -1){
+		    	perror("Error");
+		    }
+ 			break;
+ 		/*swrite()*/
+		case 'w' :
+			// call swrite()
+			if( (k = swrite(buffer)) == -1){
+				perror("Error");
+				sprintf(buf2,"F %d",errno);
+				if (write(sockfd,buf2,strlen(buf2)) == -1){
+		    		perror("Error");
+		    	}
+		    	break;
+			}
+			//return amount of bytes written
+			sprintf(buf2,"S %d",k);
+			if (write(sockfd,buf2,strlen(buf2)) == -1){
+		    		perror("Error");
+		    	}
+ 			break;
+ 		/*sclose()*/
+		case 'c' :
+			// call sclose()
+			// send back errno messege
+			k = sclose(buffer);
+			// unlock after return
+			pthread_mutex_unlock(&lock);
+			if( k == -1){
+				sprintf(buf2,"%d",errno);
+				if(write(sockfd,buf2,strlen(buf2)) == -1){
+					perror("Error");
+				}
+				break;
+			}
+			// write back success
+			if(write(sockfd,"0",1) == -1){
+				perror("Error");
+			}
+			break;
+ 	}
+ 	// book keeping
+ 	free(buffer);
+ 	free(insockfd);
+ 	close(sockfd);
+ 	active_threads--;
+ 	return;
 }
 int sopen(char* msg){
 	char buf2[256];
@@ -125,7 +246,8 @@ int sopen(char* msg){
  	bucket* bptr = h_table[index];
  	bucket*temp;
  	node* ptr;
- 	// lock threads here;
+ 	// lock threads here
+ 	pthread_mutex_lock(&lock);
  	// iterate across colissions in bucket
  	while(bptr != NULL){
  		// found matching key
@@ -284,7 +406,8 @@ int sclose(char* msg){
  	bucket* bptr = h_table[index];
  	node* ptr = NULL;
  	node* prev = NULL;
-
+ 	// lock mutex
+ 	pthread_mutex_lock(&lock);
  	while(bptr != NULL){
  		if(bptr->key == key){
  			ptr = bptr->next;
@@ -332,102 +455,3 @@ int sclose(char* msg){
 	return -1;
 }
 
-void serv_fun(int sockfd){
-	char*ret;
-	int sFD;
-	char* buffer;
-	char buf2[256];
-	int k = 0;
-	struct stat stat1;
-	buffer = (char*)calloc(256,1);
-	/*Read fromk socket*/
- 	if (read(sockfd,buffer,256) < 0){
- 		perror("Error");
- 		return;
- 	}
- 	printf("%s\n",buffer);
- 	switch(buffer[0]){
- 		/*sopen()*/
- 		case 'o' :
- 			/*call sopen() with rest of buffer*/
- 			sFD = sopen(buffer);
- 			/*Check return val*/
- 			if( sFD == -1){
- 				/*Write back the errno value*/
- 				bzero(buf2,256);
- 				sprintf(buf2,"%d",errno);
-		    	if(write(sockfd,buf2,strlen(buf2)) < 0){
-		    		perror("Error");
-		   		}
-		   		break;
-			}
-			fstat(sFD,&stat1);
-			printf("st_dev: %zd   st_ino: %zd\n",stat1.st_dev,stat1.st_ino);
-			// return the sFD
-			// TODO: deal with making sFD negative
-			bzero(buf2,256);
-			// CHECK
-		 	sprintf(buffer,"%d",-sFD);
-		    if (write(sockfd,buffer,strlen(buffer)) < 0){
-		    	perror("Error");
-		    }
-			break;
-		/*sread()*/
-		case 'r' :
-			//call swrite and check return value
- 			if( (ret = (sread(buffer))) == NULL){
- 				/*Write back the errno value*/
- 				bzero(buf2,256);
- 				sprintf(buf2,"F(%d(",errno);
-		    	if(write(sockfd,buf2,strlen(buf2)) < 0){
-		    		perror("Error");
-		   		}
-		   		break;
-			}
-			// create messege "<S/F>(<nbytes>(<ret>"
-			bzero(buf2,256);
-			sprintf(buf2,"S(%zd(",strlen(ret));
-			strncat(buf2,ret,strlen(ret));
-			free(ret);
-			if (write(sockfd,buf2,strlen(buf2))== -1){
-		    	perror("Error");
-		    }
- 			break;
- 		/*swrite()*/
-		case 'w' :
-			// call swrite()
-			if( (k = swrite(buffer)) == -1){
-				perror("Error");
-				sprintf(buf2,"F %d",errno);
-				if (write(sockfd,buf2,strlen(buf2)) == -1){
-		    		perror("Error");
-		    	}
-		    	break;
-			}
-			//return amount of bytes written
-			sprintf(buf2,"S %d",k);
-			if (write(sockfd,buf2,strlen(buf2)) == -1){
-		    		perror("Error");
-		    	}
- 			break;
- 		/*sclose()*/
-		case 'c' :
-			// call sclose()
-			// send back errno messege
-			if(sclose(buffer) == -1){
-				sprintf(buf2,"%d",errno);
-				if(write(sockfd,buf2,strlen(buf2)) == -1){
-					perror("Error");
-				}
-				break;
-			}
-			// write back success
-			if(write(sockfd,"0",1) == -1){
-				perror("Error");
-			}
-			break;
- 	}
- 	close(sockfd);
- 	free(buffer);
- 	return;
-}
