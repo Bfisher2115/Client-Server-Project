@@ -18,15 +18,19 @@ int netclose(int fd);
 #define UNRESTRICTED 0
 #define EXCLUSIVE 1
 #define TRANSACTION 2
+#define INVALID_FILE_MODE 10
+#define INVALID_FLAG 20
+#define LACK_OF_PERMISSION 22
 // for client if undef
 #ifndef O_RDONLY
+
 #define O_RDONLY	0
 #define O_WRONLY	1
 #define O_RDWR		2
-#endif
-// 
-#ifndef EBADF
 
+#endif
+//define errno values 
+#ifndef EBADF
 #define EBADF            9
 #define EPERM            1
 #define EINTR            4
@@ -38,8 +42,4 @@ int netclose(int fd);
 #define EWOULDBLOCK     EAGAIN
 #define ETIMEDOUT       110 
 #define ECONNRESET      104
-
-
-
-
 #endif

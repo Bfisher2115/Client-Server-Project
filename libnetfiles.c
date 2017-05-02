@@ -15,9 +15,13 @@ static struct hostent* init_IP = NULL;
 static int fileMode = 0;
 
 int netserverinit(char* hostname, int filemode){
+	if(filemode < 0 || filemode > 2){
+		errno = INVALID_FILE_MODE;
+		return -1;
+	}
 	init_IP = gethostbyname(hostname);
 	if(init_IP == NULL){
-		perror("Error");
+		errno = HOST_NOT_FOUND;
 		return -1;
 	}
 	fileMode = filemode;
@@ -37,7 +41,10 @@ and return the server FD(strictly negative)
 int netopen(const char* pathname,int flags){
 	if(init_IP == NULL){
 		errno = HOST_NOT_FOUND;
-		perror("Error");
+		return -1;
+	}
+	if(pathname == NULL){
+		errno = EBADF;
 		return -1;
 	}
 	struct sockaddr_in serv_addr;
@@ -50,7 +57,6 @@ int netopen(const char* pathname,int flags){
 	/*open socket*/
 	sockfd = socket(AF_INET,SOCK_STREAM,0);
 	if(sockfd < 0){
-		perror("Error");
 		return -1;
 	}
 	/*set up port,connect to socket*/
@@ -59,7 +65,6 @@ int netopen(const char* pathname,int flags){
 	serv_addr.sin_port = htons(PORT);
 	n = (socklen_t)sizeof(serv_addr);
 	if (connect(sockfd,(struct sockaddr *)&serv_addr,n) < 0){
-		perror("Error");
  		return -1;
     }
 	/*server returns 0 upon fail*/
@@ -77,6 +82,7 @@ int netopen(const char* pathname,int flags){
 			strncat(buf," 2",2);
 			break;
 		default:
+			errno = INVALID_FLAG;
 			return -1;
 	}
 	// set file mode
@@ -84,14 +90,12 @@ int netopen(const char* pathname,int flags){
 	strncat(buf,buf2,strlen(buf2));
 	/*Write to socket*/
 	if(write(sockfd,buf,strlen(buf)) == -1){
-		perror("Error");
 		close(sockfd);
 		return -1;
 	}
 	/*Read messege from socket*/
 	bzero(buf,256);
 	if(read(sockfd,buf,256) == -1){
-		perror("Error");
 		close(sockfd);
 		return -1;
 	}
@@ -104,6 +108,7 @@ int netopen(const char* pathname,int flags){
 	//otherwise, errno value sent  
 	else{
 		// TODO: set errno
+		errno = ret;
 		return -1;
 	}
 }
@@ -120,7 +125,10 @@ has (( around it to use as delims
 ssize_t netread(int fildes,void*buf,size_t nbytes){
 	if(init_IP == NULL){
 		errno = HOST_NOT_FOUND;
-		perror("Error");
+		return -1;
+	}
+	if(fildes >= 0){
+		errno = EBADF;
 		return -1;
 	}
 	struct sockaddr_in serv_addr;
@@ -132,7 +140,6 @@ ssize_t netread(int fildes,void*buf,size_t nbytes){
 	/*get socket*/
 	sockfd = socket(AF_INET,SOCK_STREAM,0);
 	if(sockfd < 0){
-		perror("Error");
 		return -1;
 	}
 	/*open socket*/
@@ -141,7 +148,6 @@ ssize_t netread(int fildes,void*buf,size_t nbytes){
 	serv_addr.sin_port = htons(PORT);
 	n = (socklen_t)sizeof(serv_addr);
 	if (connect(sockfd,(struct sockaddr *)&serv_addr,n) < 0){ 
- 		perror("Error");
  		return -1;
     }
 	// Create the messege to send to sever
@@ -155,14 +161,12 @@ ssize_t netread(int fildes,void*buf,size_t nbytes){
 	bzero(tbuf,100);
 	// send messege to server
 	if(write(sockfd,buff,strlen(buff)) == -1){
-		perror("Error");
 		close(sockfd);
 		return -1;
 	}
 	// read messege sent back from server
 	bzero(buff,256);
 	if(read(sockfd,buff,256) == -1){
-		perror("Error");
 		close(sockfd);
 		return -1;
 	}
@@ -172,7 +176,8 @@ ssize_t netread(int fildes,void*buf,size_t nbytes){
 	if(buff[0] == 'F'){
 		token = strtok(NULL,"(");
 		ret = atoi(token);
-		buf = NULL;
+		buf = "";
+		errno = ret;
 		close(sockfd);
 		return -1;
 	}
@@ -199,8 +204,11 @@ has (( around it to use as delims
 		(error)-1 if an error occurred, set ERRNO*/
 ssize_t netwrite(int fildes,const void*buf,size_t nbytes){
 	if(init_IP == NULL){
-		puts("Need to initialize before calling netwrite.");
-		/*TODO: set errno*/
+		errno = HOST_NOT_FOUND;
+		return -1;
+	}
+	if(fildes >= 0){
+		errno = EBADF;
 		return -1;
 	}
 
@@ -214,7 +222,6 @@ ssize_t netwrite(int fildes,const void*buf,size_t nbytes){
 	/*get socket*/
 	sockfd = socket(AF_INET,SOCK_STREAM,0);
 	if(sockfd < 0){
-		perror("Error");
 		return -1;
 	}
 	/*open socket*/
@@ -223,7 +230,6 @@ ssize_t netwrite(int fildes,const void*buf,size_t nbytes){
 	serv_addr.sin_port = htons(PORT);
 	n = (socklen_t)sizeof(serv_addr);
 	if (connect(sockfd,(struct sockaddr *)&serv_addr,n) < 0){ 
- 		perror("Error");
  		return -1;
     }
 	// send messege to the server
@@ -239,14 +245,12 @@ ssize_t netwrite(int fildes,const void*buf,size_t nbytes){
 	bzero(tbuf,100);
 	// write to the server
 	if(write(sockfd,buff,strlen(buff)) == -1){
-		perror("Error");
 		close(sockfd);
 		return -1;
 	}
 	// read messege back from the server
 	bzero(buff,256);
 	if(read(sockfd,buff,256) == -1){
-		perror("Error");
 		close(sockfd);
 		return -1;
 	}
@@ -254,11 +258,9 @@ ssize_t netwrite(int fildes,const void*buf,size_t nbytes){
 	//decode message
 	token = strtok(buff," ");
 	if(token[0] == 'F'){
-		errno = atoi(strtok(buff," "));
-		perror("Error");
+		errno = atoi(strtok(NULL,""));
 		return -1;
 	}
-
 	return atoi(strtok(NULL,"")); 
 }
 /*netclose: close a given serverFD
@@ -269,8 +271,7 @@ ssize_t netwrite(int fildes,const void*buf,size_t nbytes){
 		(error)-1 if an error occurred, set ERRNO*/
 int netclose(int fd){
 	if(init_IP == NULL){
-		puts("Need to initialize before calling netwrite.");
-		/*TODO: set errno*/
+		errno = HOST_NOT_FOUND;
 		return -1;
 	}
 	struct sockaddr_in serv_addr;
@@ -282,7 +283,6 @@ int netclose(int fd){
 	// open socket stream
 	sockfd = socket(AF_INET,SOCK_STREAM,0);
 	if(sockfd < 0){
-		printf("Error opening socket.\n");
 		return -1;
 	}
 	// create port , connect socket and port
@@ -291,7 +291,6 @@ int netclose(int fd){
 	serv_addr.sin_port = htons(PORT);
 	n = (socklen_t)sizeof(serv_addr);
 	if (connect(sockfd,(struct sockaddr *)&serv_addr,n) < 0){ 
- 		printf("ERROR connecting\n");
  		return -1;
     }
 	// make a mesege to send
@@ -300,14 +299,12 @@ int netclose(int fd){
     strncat(buff,temp,strlen(temp));
     // send messege to the server
 	if(write(sockfd,buff,strlen(buff)) == -1){
-		puts("Error when writing to socket");
 		close(sockfd);
 		return -1;
 	}
 	// recieve messege from the server
 	bzero(buff,100);
 	if(read(sockfd,buff,100) == -1){
-		perror("Error");
 		close(sockfd);
 		return -1;
 	}
@@ -317,7 +314,6 @@ int netclose(int fd){
 	// set errno to one passed in
 	if(ret != 0){
 		errno = ret;
-		perror("Error");
 		return -1;
 	}
 	return 0;

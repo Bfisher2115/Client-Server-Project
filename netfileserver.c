@@ -60,14 +60,11 @@ int main(int argc, char const *argv[]){
 	// open TCP stream
     sockfd = socket(AF_INET,SOCK_STREAM,0);
     if(sockfd < 0){
-    	perror("Error");
     	return 0;
     }
     // set socket opts
     int n = 1;
 	if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &n, sizeof(int)) < 0){
-    	puts("setsockopt(SO_REUSEADDR) failed");
-    	perror("Error");
     	return 0;
     }
     // set feilds of sockaddr_in
@@ -77,7 +74,6 @@ int main(int argc, char const *argv[]){
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     // bind socket with port
     if(bind(sockfd,(struct sockaddr*)&serv_addr,sizeof(serv_addr))<0){
-    	perror("Error");
     	return 0;
     }
     // queue up connections to the socket
@@ -92,7 +88,6 @@ int main(int argc, char const *argv[]){
     	// serv_fun(inSockfd);
 		
 		if( pthread_create( &worker_thread_id ,NULL,(void*)serv_fun,inSockfd ) < 0){
-            perror("could not create thread");
             return 1;
     	}
     	// increase thread count, wait until # < 10
@@ -112,15 +107,13 @@ void serv_fun(void* insockfd){
 	struct stat stat1;
 	buffer = (char*)calloc(256,1);
 	/*Read fromk socket*/
- 	if (read(sockfd,buffer,256) < 0){
- 		perror("Error");	
+ 	if (read(sockfd,buffer,256) < 0){	
  		free(buffer);
  		free(insockfd);
  		close(sockfd);
  		active_threads--;
  		return;
  	}
- 	printf("%s\n",buffer);
  	switch(buffer[0]){
  		/*sopen()*/
  		case 'o' :
@@ -133,59 +126,45 @@ void serv_fun(void* insockfd){
  				/*Write back the errno value*/
  				bzero(buf2,256);
  				sprintf(buf2,"%d",errno);
-		    	if(write(sockfd,buf2,strlen(buf2)) < 0){
-		    		perror("Error");
-		   		}
+		    	write(sockfd,buf2,strlen(buf2));
 		   		break;
 			}
 			fstat(sFD,&stat1);
-			printf("st_dev: %zd   st_ino: %zd\n",stat1.st_dev,stat1.st_ino);
 			// return the sFD
-			// TODO: deal with making sFD negative
 			bzero(buf2,256);
 			// CHECK
 		 	sprintf(buffer,"%d",-sFD);
-		    if (write(sockfd,buffer,strlen(buffer)) < 0){
-		    	perror("Error");
-		    }
+			write(sockfd,buffer,strlen(buffer));
 			break;
 		/*sread()*/
 		case 'r' :
 			//call swrite and check return value
- 			if( (ret = (sread(buffer))) == NULL){
+			ret = sread(buffer);
+ 			if( ret == NULL){
  				/*Write back the errno value*/
  				bzero(buf2,256);
  				sprintf(buf2,"F(%d(",errno);
-		    	if(write(sockfd,buf2,strlen(buf2)) < 0){
-		    		perror("Error");
-		   		}
+		    	write(sockfd,buf2,strlen(buf2));
 		   		break;
 			}
 			// create messege "<S/F>(<nbytes>(<ret>"
 			bzero(buf2,256);
 			sprintf(buf2,"S(%zd(",strlen(ret));
 			strncat(buf2,ret,strlen(ret));
+			write(sockfd,buf2,strlen(buf2));
 			free(ret);
-			if (write(sockfd,buf2,strlen(buf2))== -1){
-		    	perror("Error");
-		    }
  			break;
  		/*swrite()*/
 		case 'w' :
 			// call swrite()
 			if( (k = swrite(buffer)) == -1){
-				perror("Error");
 				sprintf(buf2,"F %d",errno);
-				if (write(sockfd,buf2,strlen(buf2)) == -1){
-		    		perror("Error");
-		    	}
+				write(sockfd,buf2,strlen(buf2));
 		    	break;
 			}
 			//return amount of bytes written
 			sprintf(buf2,"S %d",k);
-			if (write(sockfd,buf2,strlen(buf2)) == -1){
-		    		perror("Error");
-		    	}
+			write(sockfd,buf2,strlen(buf2));
  			break;
  		/*sclose()*/
 		case 'c' :
@@ -196,15 +175,11 @@ void serv_fun(void* insockfd){
 			pthread_mutex_unlock(&lock);
 			if( k == -1){
 				sprintf(buf2,"%d",errno);
-				if(write(sockfd,buf2,strlen(buf2)) == -1){
-					perror("Error");
-				}
+				write(sockfd,buf2,strlen(buf2));
 				break;
 			}
 			// write back success
-			if(write(sockfd,"0",1) == -1){
-				perror("Error");
-			}
+			write(sockfd,"0",1);
 			break;
  	}
  	// book keeping
@@ -234,7 +209,6 @@ int sopen(char* msg){
  	// get the key values
  	fd = open(buf2,flag);
  	if(fd == -1){
- 		perror("Error");
  		return -1;
  	}
 	fstat(fd,&stats);
@@ -254,7 +228,7 @@ int sopen(char* msg){
  			ptr = bptr->next;
  			// if in Tran then we cannot insert, if bptr != NULL we cant insert a TRAN mode FD
  			if(ptr->mode == 2  || mode == 2){
- 				// TODO: return the aproriate errno value
+ 				errno = EACCES;
  				close(fd);
  				return -1;
  			} 
@@ -277,7 +251,7 @@ int sopen(char* msg){
  						// exclusive write
  						if(ptr->mode == 1 && ptr->flag != O_RDONLY){
  							// cannot insert write, EXC write exists
- 							// TODO: return the right errno
+ 							errno = EACCES;
  							close(fd);
  							return -1;
  						}
@@ -299,7 +273,7 @@ int sopen(char* msg){
  						// if FD open in Write exists
  						if(ptr->flag != O_RDONLY){
  							// cannot insert a EXC write, another Fd is already open in Write mode
- 							// TODO: return the right errno
+ 							errno = EACCES;
  							close(fd);
  							return -1;
  						}
@@ -343,6 +317,7 @@ char* sread(char* msg){
 	int fd;
 	char buf[256];
 	char*token;
+	int x;
 
 	token = strtok(msg," ");
 	token = strtok(NULL," ");
@@ -354,13 +329,13 @@ char* sread(char* msg){
 	//read from FD, set FD to front of file
 	lseek(fd,0,SEEK_SET);
 	bzero(buf,256);
-	
+	errno = -1;
 	pthread_mutex_lock(&lock);
-	if(read(fd,buf,nbytes) == -1){
-		perror("Error");
+	x = read(fd,buf,nbytes);
+	if( x == -1){
+		errno = EACCES;
 		return NULL;
 	}
-	pthread_mutex_unlock(&lock);
 	// store the buf on the heap
 	token = (char*)calloc(strlen(buf)+1,1);
 	memcpy(token,buf,strlen(buf));
@@ -383,6 +358,7 @@ int swrite(char* msg){
 	//read from FD, set FD to front of the file,
 	// return the value
 	lseek(fd,0,SEEK_SET);
+	pthread_mutex_lock(&lock);
 	return write(fd,token,nbytes);
 	
 }
@@ -417,7 +393,7 @@ int sclose(char* msg){
  			if(bptr->size == 1){
  				if(ptr->fd == fd){
  					// found file
- 					if(close(fd) == -1) perror("Error");
+ 					close(fd);
  					// delete bptr+node
  					free(ptr);
  					h_table[index] = bptr->col;
@@ -433,7 +409,7 @@ int sclose(char* msg){
  						bptr->next = ptr->next;
 		 				free(ptr);
 		 				bptr->size--;
-		 				if(close(fd) == -1) perror("Error");
+		 				close(fd);
 		 				return 0;
 		 			}
 		 			// del from list anywhere else
@@ -441,7 +417,7 @@ int sclose(char* msg){
 		 				prev->next = ptr->next;
 		 				bptr->size--;
 		 				free(ptr);
-		 				if(close(fd) == -1) perror("Error");
+		 				close(fd);
 		 				return 0;
 		 			}
  				}
