@@ -217,10 +217,11 @@ void serv_fun(void* insockfd){
 int sopen(char* msg){
 	char buf2[256];
 	char*token;
-	bzero(buf2,256);
+	struct stat stats;
 	int flag ,mode, index, fd;
 		/*get pathname == buf2
 		  flag	   == k*/
+	bzero(buf2,256);
 	token = strtok(msg," ");
 	token = strtok(NULL," ");
  	strncat(buf2,token,strlen(token));
@@ -228,14 +229,14 @@ int sopen(char* msg){
  	flag = atoi(token);
  	token = strtok(NULL," ");
  	mode = atoi(token);
-
+ 	// CRITICAL SECTION: TRYING TO OPEN FILE, INSERT TO DATA STRUCT
+ 	pthread_mutex_lock(&lock);
+ 	// get the key values
  	fd = open(buf2,flag);
  	if(fd == -1){
  		perror("Error");
  		return -1;
  	}
- 	// get the key values
- 	struct stat stats;
 	fstat(fd,&stats);
 	bzero(buf2,256);
 	sprintf(buf2,"%ld%ld",stats.st_dev,stats.st_ino);
@@ -246,8 +247,6 @@ int sopen(char* msg){
  	bucket* bptr = h_table[index];
  	bucket*temp;
  	node* ptr;
- 	// lock threads here
- 	pthread_mutex_lock(&lock);
  	// iterate across colissions in bucket
  	while(bptr != NULL){
  		// found matching key
@@ -355,10 +354,13 @@ char* sread(char* msg){
 	//read from FD, set FD to front of file
 	lseek(fd,0,SEEK_SET);
 	bzero(buf,256);
+	
+	pthread_mutex_lock(&lock);
 	if(read(fd,buf,nbytes) == -1){
 		perror("Error");
 		return NULL;
 	}
+	pthread_mutex_unlock(&lock);
 	// store the buf on the heap
 	token = (char*)calloc(strlen(buf)+1,1);
 	memcpy(token,buf,strlen(buf));

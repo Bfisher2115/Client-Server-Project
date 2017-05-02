@@ -12,7 +12,7 @@ int main(int argc, char const *argv[])
 	/*REMOVE: testing with hard coded ip*/
 	char*ip = "basic.cs.rutgers.edu";
     //const char*test_w = "hello there";
-    int n1,n2,n3,x;
+    int n1,n2,n3;
     //int x;
     // schar buf[256];
 
@@ -55,8 +55,10 @@ int main(int argc, char const *argv[])
 
 
 
-     x = netclose(n1);
-     printf("return on close = %d\n",x);
+     // x = netclose(n1);
+     // printf("return on close = %d\n",x);
+     // x = netclose(n2);
+     // printf("return on close = %d\n",x);
 
 	return 0;
 }
